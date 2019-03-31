@@ -1,0 +1,6 @@
+U2UP_ADDONS_LAYERS="pc-installer"
+
+pc_installer_LAYER_NAME="pc-installer"
+pc_installer_LAYER_REPO="pc-installer"
+pc_installer_LAYER_PATH="../u2up/meta-u2up-pc-installer"
+
