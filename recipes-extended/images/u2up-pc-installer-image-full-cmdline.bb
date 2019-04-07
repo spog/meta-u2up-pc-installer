@@ -8,7 +8,9 @@ IMAGE_INSTALL = "\
     packagegroup-core-full-cmdline \
     ${CORE_IMAGE_EXTRA_INSTALL} \
     strace \
+    keymaps \
     u2up-pc-installer \
+    dialog \
     "
 
 inherit core-image

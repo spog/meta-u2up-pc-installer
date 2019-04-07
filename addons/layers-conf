@@ -1,6 +1,10 @@
-U2UP_ADDONS_LAYERS="pc-installer"
+U2UP_ADDONS_LAYERS="pc-installer meta-oe"
 
 pc_installer_LAYER_NAME="pc-installer"
 pc_installer_LAYER_REPO="pc-installer"
 pc_installer_LAYER_PATH="../u2up/meta-u2up-pc-installer"
+
+meta_oe_LAYER_NAME="meta-oe"
+meta_oe_LAYER_REPO="meta-openembedded"
+meta_oe_LAYER_PATH="${meta_oe_LAYER_NAME}"
 
