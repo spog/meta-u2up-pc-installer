@@ -12,7 +12,10 @@ U2UP_BACKTITLE="U2UP installer setup"
 U2UP_CONF_DIR=${HOME}/u2up-images/conf
 U2UP_KEYMAP_CONF_FILE=${U2UP_CONF_DIR}/u2up_keymap-conf
 U2UP_TARGET_DISK_CONF_FILE=${U2UP_CONF_DIR}/u2up_target_disk-conf
+U2UP_TARGET_DISK_SFDISK_BASH=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_bash
 U2UP_TARGET_DISK_SFDISK_DUMP=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_dump
+PART_TYPE_EFI="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
+PART_TYPE_LINUX="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 
 if [ ! -d "${U2UP_CONF_DIR}" ]; then
 	rm -rf $U2UP_CONF_DIR
@@ -337,8 +340,6 @@ check_configurations() {
 check_part_type() {
 	local part_line=""
 	local part_type=""
-	PART_TYPE_EFI="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
-	PART_TYPE_LINUX="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 
 	case $1 in
 	EFI)
@@ -385,7 +386,12 @@ check_part_type() {
 check_part_size() {
 	local part_line=""
 	local part_size=""
+	local sectors_in_kib=0
+	(( sectors_in_kib=1024/$(cat /sys/block/${TARGET_DISK_SET}/queue/hw_sector_size) ))
 
+	if [ $sectors_in_kib -le 0 ]; then
+		retrn 1
+	fi
 	case $1 in
 	Boot)
 		PART_NAME="${TARGET_DISK_SET}1"
@@ -433,6 +439,9 @@ check_current_target_disk_setup() {
 	local msg_fdisk="$(fdisk -l /dev/${TARGET_DISK_SET})\n"
 	local msg_size=17
 	local disk_change_needed=0
+	local sectors_in_kib=0
+	(( sectors_in_kib=1024/$(cat /sys/block/${TARGET_DISK_SET}/queue/hw_sector_size) ))
+
 	if [ -f "${U2UP_TARGET_DISK_CONF_FILE}" ]; then
 		source $U2UP_TARGET_DISK_CONF_FILE
 	else
@@ -446,6 +455,7 @@ check_current_target_disk_setup() {
 	then
 		# Dump current target disk setup:
 		sfdisk -d /dev/${TARGET_DISK_SET} > $U2UP_TARGET_DISK_SFDISK_DUMP
+		rm -f $U2UP_TARGET_DISK_SFDISK_BASH
 
 		# Warn, if partition table NOT GPT: 
 		if [ $(cat $U2UP_TARGET_DISK_SFDISK_DUMP | grep "label:" | grep "gpt" | wc -l) -eq 0 ]; then
@@ -453,13 +463,28 @@ check_current_target_disk_setup() {
 			msg_warn="${msg_warn}Partition table is going to be recreated as GPT!\n"
 			((msg_size+=4))
 			((disk_change_needed+=1))
+			cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+echo 'label: gpt' | sfdisk /dev/${TARGET_DISK_SET}
+EOF
 		fi
+		cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+sfdisk -d /dev/${TARGET_DISK_SET} | grep -vE "^\/dev\/${TARGET_DISK_SET}" > $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 
+########
+# BOOT
+########
+		first_sector="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep "first-lba" | sed 's/^.*: //')"
+		(( part_sectors=${TARGET_BOOT_PARTSZ_SET}*${sectors_in_kib}*1024*1024 ))
 		# Warn, if BOOT partition MISSING: 
 		if [ $(cat $U2UP_TARGET_DISK_SFDISK_DUMP | grep "/dev/${TARGET_DISK_SET}1" | wc -l) -eq 0 ]; then
 			msg_warn="${msg_warn}\n(${TARGET_DISK_SET}1) Boot partition - Missing!\n"
 			((msg_size+=2))
 			((disk_change_needed+=1))
+			cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+echo "/dev/${TARGET_DISK_SET}1 : start= ${first_sector}, size= ${part_sectors}, \
+type=${PART_TYPE_EFI}" >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 		else
 		# Warn, if BOOT partition NOT EFI: 
 			check_part_type "EFI" "Boot"
@@ -467,6 +492,10 @@ check_current_target_disk_setup() {
 				msg_warn="${msg_warn}\n(${TARGET_DISK_SET}1) Boot partition - Not EFI type!\n"
 				((msg_size+=2))
 				((disk_change_needed+=1))
+				cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}1")"
+echo "\${line}" | sed 's/type=.*,/type='${PART_TYPE_EFI}',/' >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 			else
 		# Warn, if BOOT partition NOT SIZED: 
 				check_part_size "Boot"
@@ -474,15 +503,33 @@ check_current_target_disk_setup() {
 					msg_warn="${msg_warn}\n(${TARGET_DISK_SET}1) Boot partition - Wrong size!\n"
 					((msg_size+=2))
 					((disk_change_needed+=1))
+					cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}1")"
+echo "\${line}" | sed 's/size=.*,/size='${part_sectors}',/' >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
+				else
+					cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}1")"
+echo "\${line}" >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 				fi
 			fi
 		fi
 
+#########
+# ROOTA
+#########
+		(( first_sector+=part_sectors ))
+		(( part_sectors=${TARGET_ROOTA_PARTSZ_SET}*${sectors_in_kib}*1024*1024 ))
 		# Warn, if ROOTA partition MISSING: 
 		if [ $(cat $U2UP_TARGET_DISK_SFDISK_DUMP | grep "/dev/${TARGET_DISK_SET}2" | wc -l) -eq 0 ]; then
 			msg_warn="${msg_warn}\n(${TARGET_DISK_SET}2) RootA partition - Missing!\n"
 			((msg_size+=2))
 			((disk_change_needed+=1))
+			cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+echo "/dev/${TARGET_DISK_SET}2 : start= ${first_sector}, size= ${part_sectors}, \
+type=${PART_TYPE_LINUX}" >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 		else
 		# Warn, if ROOTA partition NOT LINUX: 
 			check_part_type "Linux" "RootA"
@@ -490,6 +537,10 @@ check_current_target_disk_setup() {
 				msg_warn="${msg_warn}\n(${TARGET_DISK_SET}2) RootA partition - Not Linux type!\n"
 				((msg_size+=2))
 				((disk_change_needed+=1))
+				cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}2")"
+echo "\${line}" | sed 's/type=.*,/type='${PART_TYPE_LINUX}',/' >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 			else
 		# Warn, if ROOTA partition NOT SIZED: 
 				check_part_size "RootA"
@@ -497,15 +548,33 @@ check_current_target_disk_setup() {
 					msg_warn="${msg_warn}\n(${TARGET_DISK_SET}2) RootA partition - Wrong size!\n"
 					((msg_size+=2))
 					((disk_change_needed+=1))
+					cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}2")"
+echo "\${line}" | sed 's/size=.*,/size='${part_sectors}',/' >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
+				else
+					cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}2")"
+echo "\${line}" >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 				fi
 			fi
 		fi
 
+#########
+# ROOTB
+#########
+		(( first_sector+=part_sectors ))
+		(( part_sectors=${TARGET_ROOTB_PARTSZ_SET}*${sectors_in_kib}*1024*1024 ))
 		# Warn, if ROOTB partition MISSING: 
 		if [ $(cat $U2UP_TARGET_DISK_SFDISK_DUMP | grep "/dev/${TARGET_DISK_SET}3" | wc -l) -eq 0 ]; then
 			msg_warn="${msg_warn}\n(${TARGET_DISK_SET}3) RootB partition - Missing!\n"
 			((msg_size+=2))
 			((disk_change_needed+=1))
+			cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+echo "/dev/${TARGET_DISK_SET}3 : start= ${first_sector}, size= ${part_sectors}, \
+type=${PART_TYPE_LINUX}" >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 		else
 		# Warn, if ROOTB partition NOT LINUX: 
 			check_part_type "Linux" "RootB"
@@ -513,6 +582,10 @@ check_current_target_disk_setup() {
 				msg_warn="${msg_warn}\n(${TARGET_DISK_SET}3) RootB partition - Not Linux type!\n"
 				((msg_size+=2))
 				((disk_change_needed+=1))
+				cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}3")"
+echo "\${line}" | sed 's/type=.*,/type='${PART_TYPE_LINUX}',/' >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 			else
 		# Warn, if ROOTB partition NOT SIZED: 
 				check_part_size "RootB"
@@ -520,15 +593,33 @@ check_current_target_disk_setup() {
 					msg_warn="${msg_warn}\n(${TARGET_DISK_SET}3) RootB partition - Wrong size!\n"
 					((msg_size+=2))
 					((disk_change_needed+=1))
+					cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}3")"
+echo "\${line}" | sed 's/size=.*,/size='${part_sectors}',/' >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
+				else
+					cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}3")"
+echo "\${line}" >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 				fi
 			fi
 		fi
 
+#######
+# LOG
+#######
+		(( first_sector+=part_sectors ))
+		(( part_sectors=${TARGET_LOG_PARTSZ_SET}*${sectors_in_kib}*1024*1024 ))
 		# Warn, if LOG partition MISSING: 
 		if [ $(cat $U2UP_TARGET_DISK_SFDISK_DUMP | grep "/dev/${TARGET_DISK_SET}4" | wc -l) -eq 0 ]; then
 			msg_warn="${msg_warn}\n(${TARGET_DISK_SET}4) Log partition - Missing!\n"
 			((msg_size+=2))
 			((disk_change_needed+=1))
+			cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+echo "/dev/${TARGET_DISK_SET}4 : start= ${first_sector}, size= ${part_sectors}, \
+type=${PART_TYPE_LINUX}" >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 		else
 		# Warn, if LOG partition NOT LINUX: 
 			check_part_type "Linux" "Log"
@@ -536,6 +627,10 @@ check_current_target_disk_setup() {
 				msg_warn="${msg_warn}\n(${TARGET_DISK_SET}4) Log partition - Not Linux type!\n"
 				((msg_size+=2))
 				((disk_change_needed+=1))
+				cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}4")"
+echo "\${line}" | sed 's/type=.*,/type='${PART_TYPE_LINUX}',/' >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 			else
 		# Warn, if LOG partition NOT SIZED: 
 				check_part_size "Log"
@@ -543,6 +638,15 @@ check_current_target_disk_setup() {
 					msg_warn="${msg_warn}\n(${TARGET_DISK_SET}4) Log partition - Wrong size!\n"
 					((msg_size+=2))
 					((disk_change_needed+=1))
+					cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}4")"
+echo "\${line}" | sed 's/size=.*,/size='${part_sectors}',/' >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
+				else
+					cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+line="$(sfdisk -d /dev/${TARGET_DISK_SET} | grep -E "^\/dev\/${TARGET_DISK_SET}4")"
+echo "\${line}" >> $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 				fi
 			fi
 		fi
@@ -551,6 +655,9 @@ check_current_target_disk_setup() {
 			msg_fdisk="${msg_fdisk}\n-----------WARNINGS-----------\n"
 			msg_warn="${msg_warn}\nPartition table is going to be changed and ALL TARGET DATA LOST!\n"
 			((msg_size+=4))
+			cat >> $U2UP_TARGET_DISK_SFDISK_BASH << EOF
+sfdisk /dev/${TARGET_DISK_SET} < $U2UP_TARGET_DISK_SFDISK_DUMP
+EOF
 		fi
 		msg_warn="${msg_warn}\nDo you really want to continue?"
 		display_yesno "Final pre-installation warning" "${msg_fdisk}${msg_warn}" $msg_size
@@ -567,6 +674,7 @@ check_current_target_disk_setup() {
 }
 
 proceed_target_install() {
+#	read
 	return
 }
 
