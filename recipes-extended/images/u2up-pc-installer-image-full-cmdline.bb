@@ -11,6 +11,7 @@ IMAGE_INSTALL = "\
     keymaps \
     u2up-pc-installer \
     dialog \
+    dosfstools \
     "
 
 inherit core-image
