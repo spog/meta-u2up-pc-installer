@@ -222,7 +222,7 @@ display_target_part_submenu() {
 	done)
 
 	if [ -z "$radiolist" ]; then
-		store_target_part_selection sda2
+		store_target_part_selection ${target_disk_current}3
 		return 0
 	fi
 
@@ -890,7 +890,15 @@ populate_root_filesystem() {
 	if [ $rv -ne 0 ]; then
 		return $rv
 	fi
-	echo "Configure common logging partition:"
+	echo "Configure \"fstab\" for common boot partition:"
+	set -x
+	echo "/dev/${TARGET_DISK_SET}1 /boot vfat umask=0077 0 1" >> /mnt/etc/fstab
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Configure \"fstab\" for common logging partition:"
 	set -x
 	echo "/dev/${TARGET_DISK_SET}2 /var/log ext4 errors=remount-ro 0 1" >> /mnt/etc/fstab
 	(( rv+=$? ))
@@ -929,7 +937,7 @@ populate_root_filesystem() {
 	(( rv+=$? ))
 	echo "linux /bzImage${root_part_suffix}" >> /mnt/loader/entries/boot${root_part_suffix}.conf
 	(( rv+=$? ))
-	echo "options label=Boot${root_part_suffix} root=PARTUUID=${root_part_uuid} rootwait rootfstype=ext4 console=tty0" >> /mnt/loader/entries/boot${root_part_suffix}.conf
+	echo "options label=Boot${root_part_suffix} root=PARTUUID=${root_part_uuid} rootwait rootfstype=ext4 console=tty0 ttyprintk.tioccons=1" >> /mnt/loader/entries/boot${root_part_suffix}.conf
 	(( rv+=$? ))
 	echo "initrd /microcode${root_part_suffix}.cpio" >> /mnt/loader/entries/boot${root_part_suffix}.conf
 	(( rv+=$? ))
