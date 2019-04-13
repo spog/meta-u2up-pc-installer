@@ -9,7 +9,14 @@ DIALOG_ESC=255
 HEIGHT=0
 WIDTH=0
 U2UP_BACKTITLE="U2UP installer setup"
-U2UP_CONF_DIR=${HOME}/u2up-images/conf
+U2UP_IMAGES_DIR=${HOME}/u2up-images
+U2UP_HAG_IMAGE_ARCHIVE=${U2UP_IMAGES_DIR}/u2up-hag-image-full-cmdline-intel-corei7-64.tar.gz
+U2UP_KERNEL_MODULES_ARCHIVE=${U2UP_IMAGES_DIR}/modules-intel-corei7-64.tgz
+U2UP_KERNEL_IMAGE=${U2UP_IMAGES_DIR}/bzImage-intel-corei7-64.bin
+U2UP_INITRD_IMAGE=${U2UP_IMAGES_DIR}/microcode.cpio
+U2UP_EFI_FALLBACK_IMAGE=${U2UP_IMAGES_DIR}/bootx64.efi
+
+U2UP_CONF_DIR=${U2UP_IMAGES_DIR}/conf
 U2UP_KEYMAP_CONF_FILE=${U2UP_CONF_DIR}/u2up_keymap-conf
 U2UP_TARGET_DISK_CONF_FILE=${U2UP_CONF_DIR}/u2up_target_disk-conf
 U2UP_TARGET_DISK_SFDISK_BASH=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_bash
@@ -733,9 +740,241 @@ display_target_partsizes_submenu() {
 	done
 }
 
+
+check_create_filesystems() {
+	local TARGET_DISK_SET=""
+	local TARGET_PART_SET=""
+	local fstype=""
+	local rv=1
+
+	if [ -f "${U2UP_TARGET_DISK_CONF_FILE}" ]; then
+		source $U2UP_TARGET_DISK_CONF_FILE
+	fi
+	if [ -z "$TARGET_DISK_SET" ] || [ -z "TARGET_PART_SET" ]; then
+		return $rv
+	fi
+	# Installation partition:
+	echo "Allways re-create EXT4 filesystem on installation partition /dev/$TARGET_PART_SET:"
+	umount -f /mnt
+	set -x
+	mkfs.ext4 -F /dev/$TARGET_PART_SET
+	rv=$?
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo -e "OK!\n"
+	# Boot partition:
+	echo "Check / re-create VFAT filesystem on \"boot\" partition /dev/${TARGET_DISK_SET}1:"
+	fstype="$(lsblk -fr /dev/${TARGET_DISK_SET}1 | grep -v "NAME" | sed 's/[a-z,0-9]* //' | sed 's/ .*//')"
+	if [ -z "$fstype" ] || [ "$fstype" != "vfat" ]; then
+		echo "Recreate:"
+		set -x
+		mkfs.vfat -F /dev/${TARGET_DISK_SET}1
+		rv=$?
+		set +x
+		if [ $rv -ne 0 ]; then
+			return $rv
+		fi
+	fi
+	echo -e "OK!\n"
+	# Log partition:
+	echo "Check / re-create EXT4 filesystem on \"log\" partition /dev/${TARGET_DISK_SET}1:"
+	fstype="$(lsblk -fr /dev/${TARGET_DISK_SET}2 | grep -v "NAME" | sed 's/[a-z,0-9]* //' | sed 's/ .*//')"
+	if [ -z "$fstype" ] || [ "$fstype" != "ext4" ]; then
+		echo "Recreate:"
+		set -x
+		mkfs.ext4 -F /dev/${TARGET_DISK_SET}2
+		rv=$?
+		set +x
+		if [ $rv -ne 0 ]; then
+			return $rv
+		fi
+	fi
+	echo -e "OK!\n"
+	# RootA partition:
+	echo "Check / re-create EXT4 filesystem on \"rootA\" partition /dev/${TARGET_DISK_SET}1:"
+	fstype="$(lsblk -fr /dev/${TARGET_DISK_SET}3 | grep -v "NAME" | sed 's/[a-z,0-9]* //' | sed 's/ .*//')"
+	if [ -z "$fstype" ] || [ "$fstype" != "ext4" ]; then
+		echo "Recreate:"
+		set -x
+		mkfs.ext4 -F /dev/${TARGET_DISK_SET}3
+		rv=$?
+		set +x
+		if [ $rv -ne 0 ]; then
+			return $rv
+		fi
+	fi
+	echo -e "OK!\n"
+	# RootB partition:
+	echo "Check / re-create EXT4 filesystem on \"rootB\" partition /dev/${TARGET_DISK_SET}1:"
+	fstype="$(lsblk -fr /dev/${TARGET_DISK_SET}4 | grep -v "NAME" | sed 's/[a-z,0-9]* //' | sed 's/ .*//')"
+	if [ -z "$fstype" ] || [ "$fstype" != "ext4" ]; then
+		echo "Recreate:"
+		set -x
+		mkfs.ext4 -F /dev/${TARGET_DISK_SET}4
+		rv=$?
+		set +x
+		if [ $rv -ne 0 ]; then
+			return $rv
+		fi
+	fi
+	echo -e "OK!\n"
+	rv=0
+	return $rv
+}
+
+
+populate_root_filesystem() {
+	local KEYMAP_SET=""
+	local TARGET_DISK_SET=""
+	local TARGET_PART_SET=""
+	local root_part_suffix=""
+	local root_part_uuid=""
+	local rv=1
+
+	if [ -f "${U2UP_KEYMAP_CONF_FILE}" ]; then
+		source $U2UP_KEYMAP_CONF_FILE
+	fi
+	if [ -z "$KEYMAP_SET" ]; then
+		return $rv
+	fi
+	if [ -f "${U2UP_TARGET_DISK_CONF_FILE}" ]; then
+		source $U2UP_TARGET_DISK_CONF_FILE
+	fi
+	if [ -z "$TARGET_DISK_SET" ] || [ -z "TARGET_PART_SET" ]; then
+		return $rv
+	fi
+	root_part_uuid="$(lsblk -ir -o NAME,PARTUUID /dev/$TARGET_PART_SET | grep -v "NAME" | sed 's/[a-z,0-9]* //')"
+	if [ -z "$root_part_uuid" ]; then
+		return $rv
+	fi
+	if [ "${TARGET_PART_SET}" = "${TARGET_DISK_SET}3" ]; then
+		root_part_suffix="A"
+	elif [ "${TARGET_PART_SET}" = "${TARGET_DISK_SET}4" ]; then
+		root_part_suffix="B"
+	else
+		return $rv
+	fi
+
+	echo "Mounting root filesystem:"
+	umount -f /mnt
+	set -x
+	mount /dev/$TARGET_PART_SET /mnt
+	rv=$?
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Extracting root filesystem archive:"
+	set -x
+	tar -C /mnt -xzf ${U2UP_HAG_IMAGE_ARCHIVE}
+	rv=$?
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Extracting kernel modules archive:"
+	set -x
+	tar -C /mnt -xzf ${U2UP_KERNEL_MODULES_ARCHIVE}
+	rv=$?
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Configure target keyboard mapping:"
+	set -x
+	echo "KEYMAP=${KEYMAP_SET}" > /mnt/etc/vconsole.conf
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Configure common logging partition:"
+	set -x
+	echo "/dev/${TARGET_DISK_SET}2 /var/log ext4 errors=remount-ro 0 1" >> /mnt/etc/fstab
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Mounting boot filesystem:"
+	umount -f /mnt
+	set -x
+	mount /dev/${TARGET_DISK_SET}1 /mnt
+	rv=$?
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Prepare boot images:"
+	mkdir -p /mnt/EFI/BOOT
+	mkdir -p /mnt/loader/entries
+	set -x
+	cp ${U2UP_KERNEL_IMAGE} /mnt/bzImage${root_part_suffix}
+	(( rv+=$? ))
+	cp ${U2UP_INITRD_IMAGE} /mnt/microcode${root_part_suffix}.cpio
+	(( rv+=$? ))
+	if [ ! -f "/mnt/EFI/BOOT/bootx64.efi" ]; then
+		cp ${U2UP_EFI_FALLBACK_IMAGE} /mnt/EFI/BOOT
+		(( rv+=$? ))
+	fi
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Create new boot${root_part_suffix} menu:"
+	set -x
+	echo "title boot${root_part_suffix}" > /mnt/loader/entries/boot${root_part_suffix}.conf
+	(( rv+=$? ))
+	echo "linux /bzImage${root_part_suffix}" >> /mnt/loader/entries/boot${root_part_suffix}.conf
+	(( rv+=$? ))
+	echo "options label=Boot${root_part_suffix} root=PARTUUID=${root_part_uuid} rootwait rootfstype=ext4 console=tty0" >> /mnt/loader/entries/boot${root_part_suffix}.conf
+	(( rv+=$? ))
+	echo "initrd /microcode${root_part_suffix}.cpio" >> /mnt/loader/entries/boot${root_part_suffix}.conf
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	echo "Configure default boot:"
+	set -x
+	echo "default boot${root_part_suffix}" > /mnt/loader/loader.conf
+	(( rv+=$? ))
+	echo "timeout 5" >> /mnt/loader/loader.conf
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	return $rv
+}
+
 proceed_target_install() {
-	echo DONE!
-	exit	
+	local rv=1
+
+	check_create_filesystems
+	rv=$?
+	if [ $rv -ne 0 ]; then
+		echo "press any key to continue..."
+		read
+		display_result "Installation" "Failed to check / create filesystems!"
+		return $rv
+	fi
+
+	populate_root_filesystem
+	rv=$?
+	if [ $rv -ne 0 ]; then
+		echo "press any key to continue..."
+		read
+		display_result "Installation" "Failed to populate root filesystem!"
+		return $rv
+	fi
+
+	echo "press any key to continue..."
+	read
+	display_result "Installation" "Installation successfully finished!"
+	return $rv
 }
 
 execute_target_install() {
@@ -746,19 +985,6 @@ execute_target_install() {
 			proceed_target_install
 		fi
 	fi
-}
-
-display_execute_target_install() {
-	mkdir -p u2up-images/log
-	touch u2up-images/log/install-log
-	dialog \
-		--backtitle "${U2UP_BACKTITLE}" \
-		--title "Install" \
-		--begin 10 10 \
-		--tailboxbg u2up-images/log/install-log 5 100 \
-		--and-widget \
-		--begin 3 10 --msgbox "Press OK" 5 30
-	execute_target_install
 }
 
 main_loop () {
@@ -867,5 +1093,6 @@ main_loop () {
 	done
 }
 
+# Call main function:
 main_loop
 
