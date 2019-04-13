@@ -973,7 +973,15 @@ proceed_target_install() {
 
 	echo "press any key to continue..."
 	read
-	display_result "Installation" "Installation successfully finished!"
+	display_yesno "Installation" \
+"Installation successfully finished!\n\n\
+To reboot into new target installation, remove the installation media during the system reset!\n\n\
+Do you wish to reboot into new target installation now?" 10
+	rv=$?
+	if [ $rv -eq 0 ]; then
+		#Yes
+		reboot
+	fi
 	return $rv
 }
 
