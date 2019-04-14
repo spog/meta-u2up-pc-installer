@@ -21,6 +21,7 @@ U2UP_KEYMAP_CONF_FILE=${U2UP_CONF_DIR}/u2up_keymap-conf
 U2UP_TARGET_DISK_CONF_FILE=${U2UP_CONF_DIR}/u2up_target_disk-conf
 U2UP_TARGET_DISK_SFDISK_BASH=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_bash
 U2UP_TARGET_DISK_SFDISK_DUMP=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_dump
+U2UP_NETWORK_CONF_FILE=${U2UP_CONF_DIR}/u2up_network-conf
 
 PART_TYPE_EFI="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 PART_TYPE_LINUX="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
@@ -202,6 +203,59 @@ display_target_disk_submenu() {
 	store_target_disk_selection $selection
 }
 
+store_net_internal_iface_selection() {
+	ifname=$1
+
+	cat ${U2UP_NETWORK_CONF_FILE} | grep -v "NET_INTERNAL_IFNAME_SET=" > ${U2UP_NETWORK_CONF_FILE}_tmp
+	if [ -n "$ifname" ]; then
+		echo "NET_INTERNAL_IFNAME_SET=$ifname" >> ${U2UP_NETWORK_CONF_FILE}_tmp
+	fi
+	mv ${U2UP_NETWORK_CONF_FILE}_tmp ${U2UP_NETWORK_CONF_FILE}
+}
+
+display_net_internal_ifname_submenu() {
+	local net_internal_ifname_current=$1
+	local radiolist=""
+	local tag="start_tag"
+	local ifname=""
+	local mac=""
+
+	radiolist=$(ip link | grep "BROADCAST,MULTICAST" | sed 's/[0-9]*: //' | sed 's/: .*//g' | while read ifname; do
+		if [ -n "$ifname" ] && [[ "$ifname" != "$tag"* ]]; then
+			tag=$ifname
+			mac="$(ip link show dev $ifname | grep "link\/ether" | sed 's/ *link\/ether *//' | sed 's/ .*//')"
+			if [ -n "$net_internal_ifname_current" ] && [ "$tag" == "$net_internal_ifname_current" ]; then
+				echo -n "${tag}|"$mac"|on|"
+			else
+				echo -n "${tag}|"$mac"|off|"
+			fi
+		fi
+	done)
+
+	exec 3>&1
+	selection=$(IFS='|'; \
+	dialog \
+		--backtitle "${U2UP_BACKTITLE}" \
+		--title "Network internal interface selection" \
+		--clear \
+		--cancel-label "Cancel" \
+		--radiolist "Please select:" $HEIGHT $WIDTH 0 \
+		${radiolist} \
+	2>&1 1>&3)
+	exit_status=$?
+	exec 3>&-
+
+	case $exit_status in
+	$DIALOG_CANCEL|$DIALOG_ESC)
+		clear
+		echo "Return from submenu."
+		return 0
+		;;
+	esac
+
+	store_net_internal_iface_selection $selection
+}
+
 display_target_part_submenu() {
 	local target_disk_current=$1
 	local target_part_current=$2
@@ -262,6 +316,24 @@ check_target_disk_set() {
 	fi
 }
 
+check_net_internal_ifname_set() {
+	local NET_INTERNAL_IFNAME=""
+	local NET_INTERNAL_ADDR_MASK=""
+	local NET_INTERNAL_GW=""
+	local NET_DNS=""
+	local NET_DOMAINS=""
+
+	if [ -f "${U2UP_NETWORK_CONF_FILE}" ]; then
+		source $U2UP_NETWORK_CONF_FILE
+	else
+		NET_INTERNAL_IFNAME_SET=""
+	fi
+	if [ -z "$NET_INTERNAL_IFNAME_SET" ]; then
+		display_result "Network internal interface check" "Please select your network internal interface!"
+		return 1
+	fi
+}
+
 check_target_part_set() {
 	if [ -f "${U2UP_TARGET_DISK_CONF_FILE}" ]; then
 		source $U2UP_TARGET_DISK_CONF_FILE
@@ -302,6 +374,24 @@ check_target_disk_configuration() {
 	rv=$?
 	if [ $rv -ne 0 ]; then
 		return $rv
+	fi
+}
+
+check_network_configuration() {
+	if [ -f "${U2UP_NETWORK_CONF_FILE}" ]; then
+		source $U2UP_NETWORK_CONF_FILE
+	else
+		NET_INTERNAL_IFNAME_SET=""
+	fi
+	if \
+		[ -z "$NET_INTERNAL_IFNAME_SET" ] || \
+		[ -z "$NET_INTERNAL_ADDR_MASK_SET" ] || \
+		[ -z "$NET_INTERNAL_GW_SET" ] || \
+		[ -z "$NET_DNS_SET" ] || \
+		[ -z "$NET_DOMAINS_SET" ];
+	then
+		display_result "Network configuration check" "Please set your networking parameters!"
+		return 1
 	fi
 }
 
@@ -691,11 +781,19 @@ execute_target_repartition() {
 
 display_target_partsizes_submenu() {
 	local current_set=""
-	local target_disk_current=$1
-	local target_boot_partsz_current=${2:-2}
-	local target_log_partsz_current=${3:-5}
-	local target_rootA_partsz_current=${4:-20}
-	local target_rootB_partsz_current=${5:-20}
+	local target_disk_current=""
+	local target_boot_partsz_current=${1:-2}
+	local target_log_partsz_current=${2:-5}
+	local target_rootA_partsz_current=${3:-20}
+	local target_rootB_partsz_current=${4:-20}
+	local rv=1
+
+	check_target_disk_set
+	rv=$?
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	local target_disk_current=$TARGET_DISK_SET
 
 	while true; do
 		exec 3>&1
@@ -740,6 +838,135 @@ display_target_partsizes_submenu() {
 	done
 }
 
+store_net_config_selection() {
+	local var_net_config_set=""
+	local var_net_config_current=""
+	local value="$(echo $@ | sed 's/[^:]*://' | sed 's/ *//')"
+	local name="$(echo $@ | sed 's/RENAMED //' | sed 's/:.*//')"
+
+	if [ -z "${value}" ] || [ "x${name}" = "x${value}" ]; then
+		return 0
+	fi
+	case $name in
+	"IP address/mask")
+		var_net_config_set=NET_INTERNAL_ADDR_MASK_SET
+		var_net_config_current=net_internal_addr_mask_current
+		;;
+	"IP gateway")
+		var_net_config_set=NET_INTERNAL_GW_SET
+		var_net_config_current=net_internal_gw_current
+		;;
+	"DNS")
+		var_net_config_set=NET_DNS_SET
+		var_net_config_current=net_dns_current
+		;;
+	"Domains")
+		var_net_config_set=NET_DOMAINS_SET
+		var_net_config_current=net_domains_current
+		;;
+	*)
+		return 1;
+	esac
+
+	cat ${U2UP_NETWORK_CONF_FILE} | grep -v "${var_net_config_set}=" > ${U2UP_NETWORK_CONF_FILE}_tmp
+	echo "${var_net_config_set}=$value" >> ${U2UP_NETWORK_CONF_FILE}_tmp
+	mv ${U2UP_NETWORK_CONF_FILE}_tmp ${U2UP_NETWORK_CONF_FILE}
+	echo "${var_net_config_current}=${value}"
+}
+
+display_net_config_submenu() {
+	local current_set=""
+	local net_internal_ifname_current=""
+	local net_internal_addr_mask_current=${1:-"192.168.1.1/24"}
+	local net_internal_gw_current=${2:-"192.168.1.1"}
+	local net_dns_current=${3:-"192.168.1.1"}
+	local net_domains_current=${4:-"local.net"}
+	local rv=1
+
+	check_net_internal_ifname_set
+	rv=$?
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	local net_internal_ifname_current=$NET_INTERNAL_IFNAME_SET
+
+	while true; do
+		exec 3>&1
+		selection=$(IFS='|'; \
+		dialog \
+			--backtitle "${U2UP_BACKTITLE}" \
+			--title "Network configuration [${net_internal_ifname_current}]" \
+			--clear \
+			--cancel-label "Cancel" \
+			--extra-label "Change" \
+			--cr-wrap \
+			--inputmenu "\nPlease set:" $HEIGHT 0 12 \
+			"IP address/mask:" ${net_internal_addr_mask_current} \
+			"IP gateway:" ${net_internal_gw_current} \
+			"DNS:" ${net_dns_current} \
+			"Domains:" ${net_domains_current} \
+		2>&1 1>&3)
+		exit_status=$?
+		exec 3>&-
+
+		case $exit_status in
+		$DIALOG_CANCEL|$DIALOG_ESC)
+			clear
+			echo "Return from submenu."
+			return 1
+			;;
+		esac
+
+		current_set="$(store_net_config_selection $selection)"
+		if [ -n "$current_set" ]; then
+			#Resize pressed: set new dialog values
+			eval $current_set
+		else
+			#Ok
+			store_net_config_selection "IP address/mask: ${net_internal_addr_mask_current}"
+			(( rv+=1 ))
+			store_net_config_selection "IP gateway: ${net_internal_gw_current}"
+			(( rv+=1 ))
+			store_net_config_selection "DNS: ${net_dns_current}"
+			(( rv+=1 ))
+			store_net_config_selection "Domains: ${net_domains_current}"
+			(( rv+=1 ))
+			return $rv
+		fi
+	done
+}
+
+execute_net_reconfiguration() {
+	local TARGET_ROOT_PATH_PREFIX=$1
+	local NET_INTERNAL_IFNAME=""
+	local NET_INTERNAL_ADDR_MASK=""
+	local NET_INTERNAL_GW=""
+	local NET_DNS=""
+	local NET_DOMAINS=""
+	local rv=1
+	if [ -z "$TARGET_ROOT_PATH_PREFIX" ]; then
+		return $rv
+	fi
+	check_network_configuration
+	rv=$?
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+	if [ -f "${U2UP_NETWORK_CONF_FILE}" ]; then
+		source $U2UP_NETWORK_CONF_FILE
+	fi
+	cat > ${TARGET_ROOT_PATH_PREFIX}etc/systemd/network/10-internal-static.network << EOF
+[Match]
+Name=${NET_INTERNAL_IFNAME_SET}
+
+[Network]
+Address=${NET_INTERNAL_ADDR_MASK_SET}
+Gateway=${NET_INTERNAL_GW_SET}
+DNS=${NET_DNS_SET}
+Domains=${NET_DOMAINS_SET}
+EOF
+	return $rv
+}
 
 check_create_filesystems() {
 	local TARGET_DISK_SET=""
@@ -906,6 +1133,14 @@ populate_root_filesystem() {
 	if [ $rv -ne 0 ]; then
 		return $rv
 	fi
+	echo "Configure \"internal network\" of the installed system:"
+	set -x
+	execute_net_reconfiguration "/mnt/"
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
 	echo "Mounting boot filesystem:"
 	umount -f /mnt
 	set -x
@@ -1006,6 +1241,7 @@ execute_target_install() {
 main_loop () {
 	local current_tag='1'
 	local root_part_label
+	local net_internal_mac=""
 	local KEYMAP_SET=""
 	local TARGET_DISK_SET=""
 	local TARGET_PART_SET=""
@@ -1013,6 +1249,11 @@ main_loop () {
 	local TARGET_LOG_PARTSZ_SET=""
 	local TARGET_ROOTA_PARTSZ_SET=""
 	local TARGET_ROOTB_PARTSZ_SET=""
+	local NET_INTERNAL_IFNAME=""
+	local NET_INTERNAL_ADDR_MASK=""
+	local NET_INTERNAL_GW=""
+	local NET_DNS=""
+	local NET_DOMAINS=""
 
 	while true; do
 		if [ -f "${U2UP_KEYMAP_CONF_FILE}" ]; then
@@ -1029,6 +1270,13 @@ main_loop () {
 				root_part_label="rootB"
 			fi
 		fi
+		if [ -f "${U2UP_NETWORK_CONF_FILE}" ]; then
+			source $U2UP_NETWORK_CONF_FILE
+		fi
+		net_internal_mac=""
+		if [ -n "${NET_INTERNAL_IFNAME_SET}" ]; then
+			net_internal_mac="$(ip link show dev $NET_INTERNAL_IFNAME_SET | grep "link\/ether" | sed 's/ *link\/ether *//' | sed 's/ .*//')"
+		fi
 
 		exec 3>&1
 		selection=$(dialog \
@@ -1037,7 +1285,7 @@ main_loop () {
 			--clear \
 			--cancel-label "Exit" \
 			--default-item $current_tag \
-			--menu "Please select:" $HEIGHT $WIDTH 5 \
+			--menu "Please select:" $HEIGHT $WIDTH 7 \
 			"1" "Keyboard mapping [${KEYMAP_SET}]" \
 			"2" "Target disk [${TARGET_DISK_SET}]" \
 			"3" "Disk partitions \
@@ -1045,8 +1293,10 @@ main_loop () {
 [log:${TARGET_LOG_PARTSZ_SET}G] \
 [rootA:${TARGET_ROOTA_PARTSZ_SET}G] \
 [rootB:${TARGET_ROOTB_PARTSZ_SET}G]" \
-			"4" "Installation partition [${TARGET_PART_SET} - ${root_part_label}]" \
-			"5" "Install" \
+			"4" "Network internal interface [${NET_INTERNAL_IFNAME_SET} - ${net_internal_mac}]" \
+			"5" "Static network configuration [${NET_INTERNAL_ADDR_MASK_SET}]" \
+			"6" "Installation partition [${TARGET_PART_SET} - ${root_part_label}]" \
+			"7" "Install" \
 		2>&1 1>&3)
 		exit_status=$?
 		exec 3>&-
@@ -1084,7 +1334,6 @@ main_loop () {
 			local target_rootA_partsz_old=$TARGET_ROOTA_PARTSZ_SET
 			local target_rootB_partsz_old=$TARGET_ROOTB_PARTSZ_SET
 			display_target_partsizes_submenu \
-				$TARGET_DISK_SET \
 				$TARGET_BOOT_PARTSZ_SET \
 				$TARGET_LOG_PARTSZ_SET \
 				$TARGET_ROOTA_PARTSZ_SET \
@@ -1098,11 +1347,43 @@ main_loop () {
 			fi
 			;;
 		4)
+			display_net_internal_ifname_submenu \
+				$NET_INTERNAL_IFNAME_SET
+			;;
+		5)
+			local net_internal_addr_mask_old=$NET_INTERNAL_ADDR_MASK_SET
+			local net_internal_gw_old=$NET_INTERNAL_GW_SET
+			local net_dns_old=$NET_DNS_SET
+			local net_domains_old=$NET_DOMAINS_SET
+			display_net_config_submenu \
+				$NET_INTERNAL_ADDR_MASK_SET \
+				$NET_INTERNAL_GW_SET \
+				$NET_DNS_SET \
+				$NET_DOMAINS_SET
+			if [ $? -ne 0 ]; then
+				# Restore old network configuration
+				if [ -n "${net_internal_addr_mask_old}" ]; then
+					store_net_config_selection "IP address/mask: ${net_internal_addr_mask_old}"
+				fi
+				if [ -n "${net_internal_gw_old}" ]; then
+					store_net_config_selection "IP gateway: ${net_internal_gw_old}"
+				fi
+				if [ -n "${net_dns_old}" ]; then
+					store_net_config_selection "DNS: ${net_dns_old}"
+				fi
+				if [ -n "${net_domains_old}" ]; then
+					store_net_config_selection "Domains: ${net_domains_old}"
+				fi
+			else
+				execute_net_reconfiguration "/"
+			fi
+			;;
+		6)
 			display_target_part_submenu \
 				$TARGET_DISK_SET \
 				$TARGET_PART_SET
 			;;
-		5)
+		7)
 			execute_target_install
 			;;
 		esac
