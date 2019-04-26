@@ -21,6 +21,8 @@ U2UP_KEYMAP_CONF_FILE=${U2UP_CONF_DIR}/u2up_keymap-conf
 U2UP_TARGET_DISK_CONF_FILE=${U2UP_CONF_DIR}/u2up_target_disk-conf
 U2UP_TARGET_DISK_SFDISK_BASH=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_bash
 U2UP_TARGET_DISK_SFDISK_DUMP=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_dump
+U2UP_TARGET_HOSTNAME_CONF_FILE=${U2UP_CONF_DIR}/u2up_hostname-conf
+U2UP_TARGET_ADMIN_CONF_FILE=${U2UP_CONF_DIR}/u2up_admin-conf
 U2UP_NETWORK_CONF_FILE=${U2UP_CONF_DIR}/u2up_network-conf
 
 PART_TYPE_EFI="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
@@ -55,6 +57,10 @@ display_yesno() {
 		--cr-wrap \
 		--no-collapse \
 		--yesno "$2" $3 75
+}
+
+get_item_selection() {
+	echo $@ | sed 's/RENAMED //' | sed 's/: .*/:/'
 }
 
 store_keymap_selection() {
@@ -395,7 +401,7 @@ check_network_configuration() {
 	fi
 }
 
-check_configurations() {
+check_target_configurations() {
 	local rv=1
 	check_target_disk_set
 	rv=$?
@@ -781,6 +787,7 @@ execute_target_repartition() {
 
 display_target_partsizes_submenu() {
 	local current_set=""
+	local current_item=""
 	local target_disk_current=""
 	local target_boot_partsz_current=${1:-2}
 	local target_log_partsz_current=${2:-5}
@@ -802,6 +809,7 @@ display_target_partsizes_submenu() {
 			--backtitle "${U2UP_BACKTITLE}" \
 			--title "Target partitions" \
 			--clear \
+			--default-item "$current_item" \
 			--cancel-label "Cancel" \
 			--extra-label "Resize" \
 			--cr-wrap \
@@ -822,6 +830,7 @@ display_target_partsizes_submenu() {
 			;;
 		esac
 
+		current_item="$(get_item_selection $selection)"
 		current_set="$(store_target_partsize_selection $selection)"
 		if [ -n "$current_set" ]; then
 			#Resize pressed: set new dialog values
@@ -834,6 +843,75 @@ display_target_partsizes_submenu() {
 			store_target_partsize_selection "rootB :${target_rootB_partsz_current}"
 			execute_target_repartition
 			return $?
+		fi
+	done
+}
+
+store_target_hostname_selection() {
+	local var_target_hostname_set=""
+	local var_target_hostname_current=""
+	local value="$(echo $@ | sed 's/[^:]*://' | sed 's/ *//')"
+	local name="$(echo $@ | sed 's/RENAMED //' | sed 's/:.*//')"
+
+	if [ -z "${value}" ] || [ "x${name}" = "x${value}" ]; then
+		return 0
+	fi
+	case $name in
+	"Hostname")
+		var_target_hostname_set=TARGET_HOSTNAME_SET
+		var_target_hostname_current=target_hostname_current
+		;;
+	*)
+		return 1;
+	esac
+
+	cat ${U2UP_TARGET_HOSTNAME_CONF_FILE} | grep -v "${var_target_hostname_set}=" > ${U2UP_TARGET_HOSTNAME_CONF_FILE}_tmp
+	echo "${var_target_hostname_set}=$value" >> ${U2UP_TARGET_HOSTNAME_CONF_FILE}_tmp
+	mv ${U2UP_TARGET_HOSTNAME_CONF_FILE}_tmp ${U2UP_TARGET_HOSTNAME_CONF_FILE}
+	echo "${var_target_hostname_current}=${value}"
+}
+
+display_target_hostname_submenu() {
+	local current_set=""
+	local current_item=""
+	local target_hostname_current=${1:-"$(hostname)"}
+	local rv=0
+
+	while true; do
+		exec 3>&1
+		selection=$(IFS='|'; \
+		dialog \
+			--backtitle "${U2UP_BACKTITLE}" \
+			--title "Hostname configuration [${target_hostname_current}]" \
+			--clear \
+			--default-item "$current_item" \
+			--cancel-label "Cancel" \
+			--extra-label "Change" \
+			--cr-wrap \
+			--inputmenu "\nPlease set:" $HEIGHT 0 6 \
+			"Hostname:" ${target_hostname_current} \
+		2>&1 1>&3)
+		exit_status=$?
+		exec 3>&-
+
+		case $exit_status in
+		$DIALOG_CANCEL|$DIALOG_ESC)
+			clear
+			echo "Return from submenu."
+			return 1
+			;;
+		esac
+
+		current_item="$(get_item_selection $selection)"
+		current_set="$(store_target_hostname_selection $selection)"
+		if [ -n "$current_set" ]; then
+			#Resize pressed: set new dialog values
+			eval $current_set
+		else
+			#Ok
+			store_target_hostname_selection "Hostname: ${target_hostname_current}"
+			(( rv+=1 ))
+			return $rv
 		fi
 	done
 }
@@ -876,6 +954,7 @@ store_net_config_selection() {
 
 display_net_config_submenu() {
 	local current_set=""
+	local current_item=""
 	local net_internal_ifname_current=""
 	local net_internal_addr_mask_current=${1:-"192.168.1.1/24"}
 	local net_internal_gw_current=${2:-"192.168.1.1"}
@@ -897,6 +976,7 @@ display_net_config_submenu() {
 			--backtitle "${U2UP_BACKTITLE}" \
 			--title "Network configuration [${net_internal_ifname_current}]" \
 			--clear \
+			--default-item "$current_item" \
 			--cancel-label "Cancel" \
 			--extra-label "Change" \
 			--cr-wrap \
@@ -917,6 +997,7 @@ display_net_config_submenu() {
 			;;
 		esac
 
+		current_item="$(get_item_selection $selection)"
 		current_set="$(store_net_config_selection $selection)"
 		if [ -n "$current_set" ]; then
 			#Resize pressed: set new dialog values
@@ -934,6 +1015,19 @@ display_net_config_submenu() {
 			return $rv
 		fi
 	done
+}
+
+execute_hostname_reconfiguration() {
+	local TARGET_ROOT_PATH_PREFIX=$1
+	local rv=1
+	if [ -z "$TARGET_ROOT_PATH_PREFIX" ]; then
+		return $rv
+	fi
+	if [ -f "${U2UP_TARGET_HOSTNAME_CONF_FILE}" ]; then
+		cp $U2UP_TARGET_HOSTNAME_CONF_FILE $TARGET_ROOT_PATH_PREFIX/$U2UP_TARGET_HOSTNAME_CONF_FILE
+		rv=$?
+	fi
+	return $rv
 }
 
 execute_net_reconfiguration() {
@@ -1133,6 +1227,14 @@ populate_root_filesystem() {
 	if [ $rv -ne 0 ]; then
 		return $rv
 	fi
+	echo "Configure \"hostname\" of the installed system:"
+	set -x
+	execute_hostname_reconfiguration "/mnt/"
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
 	echo "Configure \"internal network\" of the installed system:"
 	set -x
 	execute_net_reconfiguration "/mnt/"
@@ -1229,7 +1331,7 @@ Do you wish to reboot into new target installation now?" 10
 }
 
 execute_target_install() {
-	check_configurations
+	check_target_configurations
 	if [ $? -eq 0 ]; then
 		check_current_target_disk_setup "Installation"
 		if [ $? -eq 0 ]; then
@@ -1249,6 +1351,7 @@ main_loop () {
 	local TARGET_LOG_PARTSZ_SET=""
 	local TARGET_ROOTA_PARTSZ_SET=""
 	local TARGET_ROOTB_PARTSZ_SET=""
+	local TARGET_HOSTNAME_SET=""
 	local NET_INTERNAL_IFNAME=""
 	local NET_INTERNAL_ADDR_MASK=""
 	local NET_INTERNAL_GW=""
@@ -1270,6 +1373,9 @@ main_loop () {
 				root_part_label="rootB"
 			fi
 		fi
+		if [ -f "${U2UP_TARGET_HOSTNAME_CONF_FILE}" ]; then
+			source $U2UP_TARGET_HOSTNAME_CONF_FILE
+		fi
 		if [ -f "${U2UP_NETWORK_CONF_FILE}" ]; then
 			source $U2UP_NETWORK_CONF_FILE
 		fi
@@ -1285,7 +1391,7 @@ main_loop () {
 			--clear \
 			--cancel-label "Exit" \
 			--default-item $current_tag \
-			--menu "Please select:" $HEIGHT $WIDTH 7 \
+			--menu "Please select:" $HEIGHT $WIDTH 9 \
 			"1" "Keyboard mapping [${KEYMAP_SET}]" \
 			"2" "Target disk [${TARGET_DISK_SET}]" \
 			"3" "Disk partitions \
@@ -1293,10 +1399,12 @@ main_loop () {
 [log:${TARGET_LOG_PARTSZ_SET}G] \
 [rootA:${TARGET_ROOTA_PARTSZ_SET}G] \
 [rootB:${TARGET_ROOTB_PARTSZ_SET}G]" \
-			"4" "Network internal interface [${NET_INTERNAL_IFNAME_SET} - ${net_internal_mac}]" \
-			"5" "Static network configuration [${NET_INTERNAL_ADDR_MASK_SET}]" \
-			"6" "Installation partition [${TARGET_PART_SET} - ${root_part_label}]" \
-			"7" "Install" \
+			"4" "Hostname [${TARGET_HOSTNAME_SET}]" \
+			"5" "Administrator [${TARGET_ADMIN_USER_SET}]" \
+			"6" "Network internal interface [${NET_INTERNAL_IFNAME_SET} - ${net_internal_mac}]" \
+			"7" "Static network configuration [${NET_INTERNAL_ADDR_MASK_SET}]" \
+			"8" "Installation partition [${TARGET_PART_SET} - ${root_part_label}]" \
+			"9" "Install" \
 		2>&1 1>&3)
 		exit_status=$?
 		exec 3>&-
@@ -1347,10 +1455,20 @@ main_loop () {
 			fi
 			;;
 		4)
+			local target_hostname_old=$TARGET_HOSTNAME_SET
+			display_target_hostname_submenu \
+				$TARGET_HOSTNAME_SET
+			;;
+		5)
+			local target_admin_user_old=$TARGET_ADMIN_USER_SET
+			display_target_admin_user_submenu \
+				$TARGET_ADMIN_USER_SET
+			;;
+		6)
 			display_net_internal_ifname_submenu \
 				$NET_INTERNAL_IFNAME_SET
 			;;
-		5)
+		7)
 			local net_internal_addr_mask_old=$NET_INTERNAL_ADDR_MASK_SET
 			local net_internal_gw_old=$NET_INTERNAL_GW_SET
 			local net_dns_old=$NET_DNS_SET
@@ -1378,12 +1496,12 @@ main_loop () {
 				execute_net_reconfiguration "/"
 			fi
 			;;
-		6)
+		8)
 			display_target_part_submenu \
 				$TARGET_DISK_SET \
 				$TARGET_PART_SET
 			;;
-		7)
+		9)
 			execute_target_install
 			;;
 		esac
