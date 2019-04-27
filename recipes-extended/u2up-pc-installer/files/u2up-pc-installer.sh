@@ -4,34 +4,18 @@
 #
 #set -xe
 
+U2UP_INSTALL_BASH_LIB="/lib/u2up/u2up-install-bash-lib"
+if [ ! -f "${U2UP_INSTALL_BASH_LIB}" ]; then
+	echo "Program terminated (missing: ${U2UP_INSTALL_BASH_LIB})!"
+	exit 1
+fi
+source ${U2UP_INSTALL_BASH_LIB}
+
 DIALOG_CANCEL=1
 DIALOG_ESC=255
 HEIGHT=0
 WIDTH=0
 U2UP_BACKTITLE="U2UP installer setup"
-U2UP_IMAGES_DIR=${HOME}/u2up-images
-U2UP_HAG_IMAGE_ARCHIVE=${U2UP_IMAGES_DIR}/u2up-hag-image-full-cmdline-intel-corei7-64.tar.gz
-U2UP_KERNEL_MODULES_ARCHIVE=${U2UP_IMAGES_DIR}/modules-intel-corei7-64.tgz
-U2UP_KERNEL_IMAGE=${U2UP_IMAGES_DIR}/bzImage-intel-corei7-64.bin
-U2UP_INITRD_IMAGE=${U2UP_IMAGES_DIR}/microcode.cpio
-U2UP_EFI_FALLBACK_IMAGE=${U2UP_IMAGES_DIR}/bootx64.efi
-
-U2UP_CONF_DIR=${U2UP_IMAGES_DIR}/conf
-U2UP_KEYMAP_CONF_FILE=${U2UP_CONF_DIR}/u2up_keymap-conf
-U2UP_TARGET_DISK_CONF_FILE=${U2UP_CONF_DIR}/u2up_target_disk-conf
-U2UP_TARGET_DISK_SFDISK_BASH=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_bash
-U2UP_TARGET_DISK_SFDISK_DUMP=${U2UP_CONF_DIR}/u2up_target_disk-sfdisk_dump
-U2UP_TARGET_HOSTNAME_CONF_FILE=${U2UP_CONF_DIR}/u2up_hostname-conf
-U2UP_TARGET_ADMIN_CONF_FILE=${U2UP_CONF_DIR}/u2up_admin-conf
-U2UP_NETWORK_CONF_FILE=${U2UP_CONF_DIR}/u2up_network-conf
-
-PART_TYPE_EFI="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
-PART_TYPE_LINUX="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
-
-if [ ! -d "${U2UP_CONF_DIR}" ]; then
-	rm -rf $U2UP_CONF_DIR
-	mkdir -p $U2UP_CONF_DIR
-fi
 
 display_result() {
 	dialog \
@@ -63,77 +47,8 @@ get_item_selection() {
 	echo $@ | sed 's/RENAMED //' | sed 's/: .*/:/'
 }
 
-store_keymap_selection() {
-	keymap=$1
-	if [ -n "$keymap" ]; then
-		loadkeys $keymap
-		if [ $? -eq 0 ]; then
-			echo "KEYMAP=$keymap" > /etc/vconsole.conf
-			echo "KEYMAP_SET=$keymap" > ${U2UP_KEYMAP_CONF_FILE}
-		else
-			rm -f /etc/vconsole.conf
-			rm -f ${U2UP_KEYMAP_CONF_FILE}
-		fi
-	fi
-}
-
-store_target_disk_selection() {
-	disk=$1
-
-	cat ${U2UP_TARGET_DISK_CONF_FILE} | grep -v "TARGET_DISK_SET=" > ${U2UP_TARGET_DISK_CONF_FILE}_tmp
-	if [ -n "$disk" ]; then
-		echo "TARGET_DISK_SET=$disk" >> ${U2UP_TARGET_DISK_CONF_FILE}_tmp
-	fi
-	mv ${U2UP_TARGET_DISK_CONF_FILE}_tmp ${U2UP_TARGET_DISK_CONF_FILE}
-}
-
-store_target_part_selection() {
-	part=$1
-
-	cat ${U2UP_TARGET_DISK_CONF_FILE} | grep -v "TARGET_PART_SET=" > ${U2UP_TARGET_DISK_CONF_FILE}_tmp
-	if [ -n "$part" ]; then
-		echo "TARGET_PART_SET=$part" >> ${U2UP_TARGET_DISK_CONF_FILE}_tmp
-	fi
-	mv ${U2UP_TARGET_DISK_CONF_FILE}_tmp ${U2UP_TARGET_DISK_CONF_FILE}
-}
-
-store_target_partsize_selection() {
-	local var_target_partsz_set=""
-	local var_target_partsz_current=""
-	local part=$(echo $@ | sed 's/RENAMED //' | sed 's/ .*//')
-	declare -i part_size=$(echo $@ | sed 's/.*://')
-
-	if [ $part_size -le 0 ]; then
-		return
-	fi
-	case $part in
-	boot)
-		var_target_partsz_set=TARGET_BOOT_PARTSZ_SET
-		var_target_partsz_current=target_boot_partsz_current
-		;;
-	log)
-		var_target_partsz_set=TARGET_LOG_PARTSZ_SET
-		var_target_partsz_current=target_log_partsz_current
-		;;
-	rootA)
-		var_target_partsz_set=TARGET_ROOTA_PARTSZ_SET
-		var_target_partsz_current=target_rootA_partsz_current
-		;;
-	rootB)
-		var_target_partsz_set=TARGET_ROOTB_PARTSZ_SET
-		var_target_partsz_current=target_rootB_partsz_current
-		;;
-	*)
-		exit;
-	esac
-
-	cat ${U2UP_TARGET_DISK_CONF_FILE} | grep -v "${var_target_partsz_set}=" > ${U2UP_TARGET_DISK_CONF_FILE}_tmp
-	echo "${var_target_partsz_set}=$part_size" >> ${U2UP_TARGET_DISK_CONF_FILE}_tmp
-	mv ${U2UP_TARGET_DISK_CONF_FILE}_tmp ${U2UP_TARGET_DISK_CONF_FILE}
-	echo "${var_target_partsz_current}=${part_size}"
-}
-
 display_keymap_submenu() {
+	local rv=1
 	local keymap_current=$1
 	menu=""
 
@@ -164,6 +79,10 @@ display_keymap_submenu() {
 	esac
 
 	store_keymap_selection $selection
+	rv=$?
+	if [ $rv -eq 0 ]; then
+		enable_keymap_selection
+	fi
 }
 
 display_target_disk_submenu() {
@@ -207,16 +126,6 @@ display_target_disk_submenu() {
 	esac
 
 	store_target_disk_selection $selection
-}
-
-store_net_internal_iface_selection() {
-	ifname=$1
-
-	cat ${U2UP_NETWORK_CONF_FILE} | grep -v "NET_INTERNAL_IFNAME_SET=" > ${U2UP_NETWORK_CONF_FILE}_tmp
-	if [ -n "$ifname" ]; then
-		echo "NET_INTERNAL_IFNAME_SET=$ifname" >> ${U2UP_NETWORK_CONF_FILE}_tmp
-	fi
-	mv ${U2UP_NETWORK_CONF_FILE}_tmp ${U2UP_NETWORK_CONF_FILE}
 }
 
 display_net_internal_ifname_submenu() {
@@ -847,30 +756,6 @@ display_target_partsizes_submenu() {
 	done
 }
 
-store_target_hostname_selection() {
-	local var_target_hostname_set=""
-	local var_target_hostname_current=""
-	local value="$(echo $@ | sed 's/[^:]*://' | sed 's/ *//')"
-	local name="$(echo $@ | sed 's/RENAMED //' | sed 's/:.*//')"
-
-	if [ -z "${value}" ] || [ "x${name}" = "x${value}" ]; then
-		return 0
-	fi
-	case $name in
-	"Hostname")
-		var_target_hostname_set=TARGET_HOSTNAME_SET
-		var_target_hostname_current=target_hostname_current
-		;;
-	*)
-		return 1;
-	esac
-
-	cat ${U2UP_TARGET_HOSTNAME_CONF_FILE} | grep -v "${var_target_hostname_set}=" > ${U2UP_TARGET_HOSTNAME_CONF_FILE}_tmp
-	echo "${var_target_hostname_set}=$value" >> ${U2UP_TARGET_HOSTNAME_CONF_FILE}_tmp
-	mv ${U2UP_TARGET_HOSTNAME_CONF_FILE}_tmp ${U2UP_TARGET_HOSTNAME_CONF_FILE}
-	echo "${var_target_hostname_current}=${value}"
-}
-
 display_target_hostname_submenu() {
 	local current_set=""
 	local current_item=""
@@ -910,46 +795,10 @@ display_target_hostname_submenu() {
 		else
 			#Ok
 			store_target_hostname_selection "Hostname: ${target_hostname_current}"
-			(( rv+=1 ))
+			(( rv+=$? ))
 			return $rv
 		fi
 	done
-}
-
-store_net_config_selection() {
-	local var_net_config_set=""
-	local var_net_config_current=""
-	local value="$(echo $@ | sed 's/[^:]*://' | sed 's/ *//')"
-	local name="$(echo $@ | sed 's/RENAMED //' | sed 's/:.*//')"
-
-	if [ -z "${value}" ] || [ "x${name}" = "x${value}" ]; then
-		return 0
-	fi
-	case $name in
-	"IP address/mask")
-		var_net_config_set=NET_INTERNAL_ADDR_MASK_SET
-		var_net_config_current=net_internal_addr_mask_current
-		;;
-	"IP gateway")
-		var_net_config_set=NET_INTERNAL_GW_SET
-		var_net_config_current=net_internal_gw_current
-		;;
-	"DNS")
-		var_net_config_set=NET_DNS_SET
-		var_net_config_current=net_dns_current
-		;;
-	"Domains")
-		var_net_config_set=NET_DOMAINS_SET
-		var_net_config_current=net_domains_current
-		;;
-	*)
-		return 1;
-	esac
-
-	cat ${U2UP_NETWORK_CONF_FILE} | grep -v "${var_net_config_set}=" > ${U2UP_NETWORK_CONF_FILE}_tmp
-	echo "${var_net_config_set}=$value" >> ${U2UP_NETWORK_CONF_FILE}_tmp
-	mv ${U2UP_NETWORK_CONF_FILE}_tmp ${U2UP_NETWORK_CONF_FILE}
-	echo "${var_net_config_current}=${value}"
 }
 
 display_net_config_submenu() {
@@ -1005,29 +854,16 @@ display_net_config_submenu() {
 		else
 			#Ok
 			store_net_config_selection "IP address/mask: ${net_internal_addr_mask_current}"
-			(( rv+=1 ))
+			(( rv+=$? ))
 			store_net_config_selection "IP gateway: ${net_internal_gw_current}"
-			(( rv+=1 ))
+			(( rv+=$? ))
 			store_net_config_selection "DNS: ${net_dns_current}"
-			(( rv+=1 ))
+			(( rv+=$? ))
 			store_net_config_selection "Domains: ${net_domains_current}"
-			(( rv+=1 ))
+			(( rv+=$? ))
 			return $rv
 		fi
 	done
-}
-
-execute_hostname_reconfiguration() {
-	local TARGET_ROOT_PATH_PREFIX=$1
-	local rv=1
-	if [ -z "$TARGET_ROOT_PATH_PREFIX" ]; then
-		return $rv
-	fi
-	if [ -f "${U2UP_TARGET_HOSTNAME_CONF_FILE}" ]; then
-		cp $U2UP_TARGET_HOSTNAME_CONF_FILE $TARGET_ROOT_PATH_PREFIX/$U2UP_TARGET_HOSTNAME_CONF_FILE
-		rv=$?
-	fi
-	return $rv
 }
 
 execute_net_reconfiguration() {
@@ -1147,19 +983,12 @@ check_create_filesystems() {
 
 
 populate_root_filesystem() {
-	local KEYMAP_SET=""
 	local TARGET_DISK_SET=""
 	local TARGET_PART_SET=""
 	local root_part_suffix=""
 	local root_part_uuid=""
 	local rv=1
 
-	if [ -f "${U2UP_KEYMAP_CONF_FILE}" ]; then
-		source $U2UP_KEYMAP_CONF_FILE
-	fi
-	if [ -z "$KEYMAP_SET" ]; then
-		return $rv
-	fi
 	if [ -f "${U2UP_TARGET_DISK_CONF_FILE}" ]; then
 		source $U2UP_TARGET_DISK_CONF_FILE
 	fi
@@ -1203,9 +1032,17 @@ populate_root_filesystem() {
 	if [ $rv -ne 0 ]; then
 		return $rv
 	fi
+	echo "Populate \"u2up-config.d\" of the installed system:"
+	set -x
+	populate_u2up_configurations "/mnt"
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
 	echo "Configure target keyboard mapping:"
 	set -x
-	echo "KEYMAP=${KEYMAP_SET}" > /mnt/etc/vconsole.conf
+	enable_keymap_selection "/mnt" 1
 	(( rv+=$? ))
 	set +x
 	if [ $rv -ne 0 ]; then
@@ -1222,14 +1059,6 @@ populate_root_filesystem() {
 	echo "Configure \"fstab\" for common logging partition:"
 	set -x
 	echo "/dev/${TARGET_DISK_SET}2 /var/log ext4 errors=remount-ro 0 1" >> /mnt/etc/fstab
-	(( rv+=$? ))
-	set +x
-	if [ $rv -ne 0 ]; then
-		return $rv
-	fi
-	echo "Configure \"hostname\" of the installed system:"
-	set -x
-	execute_hostname_reconfiguration "/mnt/"
 	(( rv+=$? ))
 	set +x
 	if [ $rv -ne 0 ]; then
@@ -1341,6 +1170,7 @@ execute_target_install() {
 }
 
 main_loop () {
+	local rv=1
 	local current_tag='1'
 	local root_part_label
 	local net_internal_mac=""
@@ -1446,7 +1276,8 @@ main_loop () {
 				$TARGET_LOG_PARTSZ_SET \
 				$TARGET_ROOTA_PARTSZ_SET \
 				$TARGET_ROOTB_PARTSZ_SET
-			if [ $? -ne 0 ]; then
+			rv=$?
+			if [ $rv -ne 0 ]; then
 				# Restore old partition sizes
 				store_target_partsize_selection "boot :${target_boot_partsz_old}"
 				store_target_partsize_selection "log :${target_log_partsz_old}"
@@ -1478,7 +1309,8 @@ main_loop () {
 				$NET_INTERNAL_GW_SET \
 				$NET_DNS_SET \
 				$NET_DOMAINS_SET
-			if [ $? -ne 0 ]; then
+			rv=$?
+			if [ $rv -ne 0 ]; then
 				# Restore old network configuration
 				if [ -n "${net_internal_addr_mask_old}" ]; then
 					store_net_config_selection "IP address/mask: ${net_internal_addr_mask_old}"
