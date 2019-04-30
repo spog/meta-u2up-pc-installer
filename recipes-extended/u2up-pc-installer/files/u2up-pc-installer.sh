@@ -1075,6 +1075,14 @@ populate_root_filesystem() {
 	if [ $rv -ne 0 ]; then
 		return $rv
 	fi
+	echo "Done configuring target disk and partitions:"
+	set -x
+	set_target_done_for /mnt/${U2UP_TARGET_DISK_CONF_FILE} 1
+	(( rv+=$? ))
+	set +x
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
 	echo "Configure \"internal network\" of the installed system:"
 	set -x
 	execute_net_reconfiguration "/mnt/"
