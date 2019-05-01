@@ -812,6 +812,51 @@ display_target_hostname_submenu() {
 	done
 }
 
+display_target_admin_submenu() {
+	local current_set=""
+	local current_item=""
+	local target_admin_name_current=${1:-"admin"}
+	local rv=0
+
+	while true; do
+		exec 3>&1
+		selection=$(IFS='|'; \
+		dialog \
+			--backtitle "${U2UP_BACKTITLE}" \
+			--title "Hostname configuration [${target_admin_name_current}]" \
+			--clear \
+			--default-item "$current_item" \
+			--cancel-label "Cancel" \
+			--extra-label "Change" \
+			--cr-wrap \
+			--inputmenu "\nPlease set:" $HEIGHT 0 6 \
+			"Admin name:" ${target_admin_name_current} \
+		2>&1 1>&3)
+		exit_status=$?
+		exec 3>&-
+
+		case $exit_status in
+		$DIALOG_CANCEL|$DIALOG_ESC)
+			clear
+			echo "Return from submenu."
+			return 1
+			;;
+		esac
+
+		current_item="$(get_item_selection $selection)"
+		current_set="$(store_target_admin_selection $selection)"
+		if [ -n "$current_set" ]; then
+			#Resize pressed: set new dialog values
+			eval $current_set
+		else
+			#Ok
+			store_target_admin_selection "Admin name: ${target_admin_name_current}"
+			(( rv+=$? ))
+			return $rv
+		fi
+	done
+}
+
 display_net_config_submenu() {
 	local current_set=""
 	local current_item=""
@@ -1201,6 +1246,7 @@ main_loop () {
 	local TARGET_ROOTA_PARTSZ_SET=""
 	local TARGET_ROOTB_PARTSZ_SET=""
 	local TARGET_HOSTNAME_SET=""
+	local TARGET_ADMIN_NAME_SET=""
 	local NET_INTERNAL_IFNAME=""
 	local NET_INTERNAL_ADDR_MASK=""
 	local NET_INTERNAL_GW=""
@@ -1224,6 +1270,9 @@ main_loop () {
 		fi
 		if [ -f "${U2UP_TARGET_HOSTNAME_CONF_FILE}" ]; then
 			source $U2UP_TARGET_HOSTNAME_CONF_FILE
+		fi
+		if [ -f "${U2UP_TARGET_ADMIN_CONF_FILE}" ]; then
+			source $U2UP_TARGET_ADMIN_CONF_FILE
 		fi
 		if [ -f "${U2UP_NETWORK_CONF_FILE}" ]; then
 			source $U2UP_NETWORK_CONF_FILE
@@ -1249,7 +1298,7 @@ main_loop () {
 [rootA:${TARGET_ROOTA_PARTSZ_SET}G] \
 [rootB:${TARGET_ROOTB_PARTSZ_SET}G]" \
 			"4" "Hostname [${TARGET_HOSTNAME_SET}]" \
-			"5" "Administrator [${TARGET_ADMIN_USER_SET}]" \
+			"5" "Administrator [${TARGET_ADMIN_NAME_SET}]" \
 			"6" "Network internal interface [${NET_INTERNAL_IFNAME_SET} - ${net_internal_mac}]" \
 			"7" "Static network configuration [${NET_INTERNAL_ADDR_MASK_SET}]" \
 			"8" "Installation partition [${TARGET_PART_SET} - ${root_part_label}]" \
@@ -1310,9 +1359,9 @@ main_loop () {
 				$TARGET_HOSTNAME_SET
 			;;
 		5)
-			local target_admin_user_old=$TARGET_ADMIN_USER_SET
-			display_target_admin_user_submenu \
-				$TARGET_ADMIN_USER_SET
+			local target_admin_name_old=$TARGET_ADMIN_NAME_SET
+			display_target_admin_submenu \
+				$TARGET_ADMIN_NAME_SET
 			;;
 		6)
 			display_net_internal_ifname_submenu \
