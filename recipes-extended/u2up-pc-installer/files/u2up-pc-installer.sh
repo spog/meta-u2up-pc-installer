@@ -1080,14 +1080,14 @@ populate_root_filesystem() {
 	if [ $rv -ne 0 ]; then
 		return $rv
 	fi
-	echo "Extracting kernel modules archive:"
-	set -x
-	tar -C /mnt -xzf ${U2UP_KERNEL_MODULES_ARCHIVE}
-	rv=$?
-	set +x
-	if [ $rv -ne 0 ]; then
-		return $rv
-	fi
+#	echo "Extracting kernel modules archive:"
+#	set -x
+#	tar -C /mnt -xzf ${U2UP_KERNEL_MODULES_ARCHIVE}
+#	rv=$?
+#	set +x
+#	if [ $rv -ne 0 ]; then
+#		return $rv
+#	fi
 	echo "Populate \"u2up-config.d\" of the installed system:"
 	set -x
 	populate_u2up_configurations "/mnt"
