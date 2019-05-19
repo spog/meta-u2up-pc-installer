@@ -13,7 +13,7 @@ do_patch () {
 	mv ${WORKDIR}/LICENSE ${S}/
 }
 
-IMAGESDIR = "${HOME}/U2UP-YOCTO/u2up-yocto_hag/u2up/build.intel-corei7-64_thud/tmp/deploy/images"
+IMAGESDIR = "${HOME}/U2UP-YOCTO/u2up-yocto_homegw/u2up/build.intel-corei7-64_thud/tmp/deploy/images"
 
 do_install () {
 	install -d ${D}/var/lib/u2up-images
