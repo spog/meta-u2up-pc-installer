@@ -21,7 +21,7 @@ do_install () {
 	install -m 0644 ${IMAGESDIR}/intel-corei7-64/bzImage-intel-corei7-64.bin ${D}/var/lib/u2up-images/
 	install -m 0644 ${IMAGESDIR}/intel-corei7-64/modules-intel-corei7-64.tgz ${D}/var/lib/u2up-images/
 	install -m 0644 ${IMAGESDIR}/intel-corei7-64/microcode.cpio ${D}/var/lib/u2up-images/
-	install -m 0644 ${IMAGESDIR}/intel-corei7-64/u2up-hag-image-full-cmdline-intel-corei7-64.tar.gz ${D}/var/lib/u2up-images/
+	install -m 0644 ${IMAGESDIR}/intel-corei7-64/u2up-homegw-image-full-cmdline-intel-corei7-64.tar.gz ${D}/var/lib/u2up-images/
 }
 
 FILES_${PN} += "var"
