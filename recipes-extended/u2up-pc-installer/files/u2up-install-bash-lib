@@ -239,6 +239,17 @@ enable_target_admin_selection() {
 		fi
 		usermod -aG wheel $TARGET_ADMIN_NAME_SET
 		rv=$?
+		if [ $rv -ne 0 ]; then
+			return 1
+		fi
+		# Locking the root account and scrambling its password!
+		passwd -l root
+		rv=$?
+		if [ $rv -ne 0 ]; then
+			return 1
+		fi
+		usermod -p '!' root
+		rv=$?
 		if [ $rv -eq 0 ]; then
 			set_target_done_for ${root_path_prefix}${U2UP_TARGET_ADMIN_CONF_FILE} ${new_target_done}
 			rv=$?
@@ -302,6 +313,10 @@ enable_net_config_selection() {
 		if [ -n "${NET_INTERNAL_IFNAME_SET}" ] && [ -n "${NET_INTERNAL_ADDR_MASK_SET}" ] && [ -n "${NET_INTERNAL_GW_SET}" ]; then
 			nmcli con add type ethernet con-name internal ifname ${NET_INTERNAL_IFNAME_SET} ip4 ${NET_INTERNAL_ADDR_MASK_SET} gw4 ${NET_INTERNAL_GW_SET}
 			rv=$?
+			if [ $rv -eq 0 ]; then
+				nmcli con mod internal connection.zone trusted
+				rv=$?
+			fi
 		fi
 		if [ $rv -eq 0 ] && [ -n "${NET_DNS_SET}" ]; then
 			nmcli con mod internal ipv4.dns "${NET_DNS_SET}"
@@ -339,7 +354,7 @@ populate_u2up_configurations() {
 }
 
 evaluate_u2up_configurations() {
-set -x
+#set -x
 	local root_path_prefix=${1:-"/"}
 	local file=""
 	local rv=1
