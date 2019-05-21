@@ -16,7 +16,7 @@ if [ ! -d "${U2UP_IMAGES_DIR}" ]; then
 	echo "Program terminated (missing: ${U2UP_IMAGES_DIR})!"
 	exit 1
 fi
-U2UP_HAG_IMAGE_ARCHIVE=${U2UP_IMAGES_DIR}/u2up-hag-image-full-cmdline-intel-corei7-64.tar.gz
+U2UP_HAG_IMAGE_ARCHIVE=${U2UP_IMAGES_DIR}/u2up-homegw-image-full-cmdline-intel-corei7-64.tar.gz
 U2UP_KERNEL_MODULES_ARCHIVE=${U2UP_IMAGES_DIR}/modules-intel-corei7-64.tgz
 U2UP_KERNEL_IMAGE=${U2UP_IMAGES_DIR}/bzImage-intel-corei7-64.bin
 U2UP_INITRD_IMAGE=${U2UP_IMAGES_DIR}/microcode.cpio
