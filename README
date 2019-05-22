@@ -1,0 +1,65 @@
+The "meta-u2up-pc-installer" - PC Installer build project
+=========================================================
+
+--------------------------------------------------------------------
+Copyright (C) 2018-2019 Samo Pogacnik <samo_pogacnik@t-2.net>
+All rights reserved.
+
+The "meta-u2up-pc-installer" software project is provided under the terms of the
+BSD 3-Clause license, which is available in the LICENSE file of this
+project.
+--------------------------------------------------------------------
+
+Description:
+-----------
+This is a "u2up-yocto" addons project for building your own PC installer.
+
+Getting started:
+---------------
+Grab the "u2up-yocto" Linux distro build project by:
+$ git clone https://github.com/spog/u2up-yocto.git
+Cloning into 'u2up-yocto'...
+...
+
+Change dir to prepare your "pc-installer" addons project:
+$ cd u2up-yocto/u2up
+
+Grab the "meta-u2up-pc-installer" addons project by:
+$ git clone https://github.com/spog/meta-u2up-pc-installer.git
+Cloning into 'meta-u2up-pc-installer'...
+...
+
+Change dir to enable your "pc-installer" addons project:
+$ cd ..
+
+Enable your "pc-insteller" addons project:
+$ ln -s u2up/meta-u2up-pc-installer/addons addons
+
+Finish your "u2up-yocto" build configuration:
+$ cd distro-conf
+$ cp u2up-conf_default u2up-conf
+
+Set your own writable path for U2UP_YOCTO_SHARED variable in "u2up-conf" like:
+U2UP_YOCTO_SHARED="${HOME}/u2up-yocto-shared"
+
+Go back to your "u2up-yocto" top dir:
+$ cd ..
+
+Start your build:
+$ ./distro intel-corei7-64 bitbake u2up-pc-installer-image-full-cmdline
+
+Create target PC installer for "u2up-homegw":
+$ ./distro intel-corei7-64 bbsh
+bbsh|user@host:build.intel-corei7-64_thud$ ../meta-u2up-pc-installer/scripts/build_u2up-homegw-pc-installer_wic.sh {path_to_u2up-homegw_images}
+
+Check final Wic image:
+bbsh|user@host:build.intel-corei7-64_thud$ ls -la | grep wic
+-rw-r--r--  1 user user 1164985344 maj 22 21:55 u2up-homegw-pc-installer.wic
+-rw-r--r--  1 user user       3605 maj 22 21:55 u2up-homegw-pc-installer.wic.bmap
+
+Use "bmaptool" to bake your installation media like this:
+bbsh|user@host:build.intel-corei7-64_thud$ sudo bmaptool copy ./u2up-homegw-pc-installer.wic /dev/sdb
+
+---
+bye!)
+

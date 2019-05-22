@@ -28,5 +28,5 @@ do_install () {
 
 FILES_${PN} += "etc lib usr"
 
-RDEPENDS_${PN} = "bash u2up-images"
+RDEPENDS_${PN} = "bash"
 

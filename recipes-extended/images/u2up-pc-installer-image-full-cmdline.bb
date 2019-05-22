@@ -9,7 +9,6 @@ IMAGE_INSTALL = "\
     ${CORE_IMAGE_EXTRA_INSTALL} \
     strace \
     keymaps \
-    u2up-images \
     u2up-pc-installer \
     dialog \
     dosfstools \
