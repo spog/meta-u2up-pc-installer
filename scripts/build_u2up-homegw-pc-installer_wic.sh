@@ -77,12 +77,14 @@ function rootfs_u2up_images_prepare ()
 {
 	echo $pre"Called ${FUNCNAME[0]}()..."
 	set -e
-	rm -rf $ROOTFS_IMAGE_DIR
-	mkdir -p $ROOTFS_IMAGE_DIR
-	cp -a ${BUILDDIR}/tmp/work/intel_corei7_64-u2up-linux/u2up-pc-installer-image-full-cmdline/1.0-r0/rootfs $ROOTFS_IMAGE_DIR/
-	cp -a ${BUILDDIR}/tmp/work/intel_corei7_64-u2up-linux/u2up-pc-installer-image-full-cmdline/1.0-r0/pseudo $ROOTFS_IMAGE_DIR/
+	rm -rf ${ROOTFS_IMAGE_DIR}/u2up-images-rootfs
+##	mkdir -p ${ROOTFS_IMAGE_DIR}/u2up-images-rootfs
+##	cd ${ROOTFS_IMAGE_DIR}/u2up-images-rootfs
+##	tar xzf ${BUILDDIR}/tmp/deploy/images/intel-corei7-64/u2up-pc-installer-image-full-cmdline-intel-corei7-64.tar.gz
+##	cd -
+	cp -a ${ROOTFS_IMAGE_DIR}/rootfs ${ROOTFS_IMAGE_DIR}/u2up-images-rootfs
 	set +e
-	ROOTFSDIR="${ROOTFS_IMAGE_DIR}/rootfs"
+	ROOTFSDIR="${ROOTFS_IMAGE_DIR}/u2up-images-rootfs"
 	if [ ! -d "${ROOTFSDIR}/var/lib" ]; then
 		echo $pre"ERROR - '${ROOTFSDIR}' - does not look like a rootfs directory!"
 		echo
@@ -110,7 +112,7 @@ function build_image_wic ()
 
 	set -e
 	wic create "$wks" -o "$out/" \
-		--rootfs-dir "${ROOTFS_IMAGE_DIR}/rootfs" \
+		--rootfs-dir "${ROOTFS_IMAGE_DIR}/u2up-images-rootfs" \
 		--bootimg-dir "${BUILDDIR}/tmp/work/intel_corei7_64-u2up-linux/u2up-pc-installer-image-full-cmdline/1.0-r0/recipe-sysroot/usr/share" \
 		--kernel-dir "${BUILDDIR}/tmp/deploy/images/intel-corei7-64" \
 		--native-sysroot "${BUILDDIR}/tmp/work/intel_corei7_64-u2up-linux/u2up-pc-installer-image-full-cmdline/1.0-r0/recipe-sysroot-native"
@@ -121,7 +123,7 @@ function build_image_wic ()
 	bmaptool create ${INSTALLER_IMAGE_NAME}.wic -o ${INSTALLER_IMAGE_NAME}.wic.bmap
 }
 
-ROOTFS_IMAGE_DIR="${BUILDDIR}/${INSTALLER_IMAGE_NAME}_rootfs"
+ROOTFS_IMAGE_DIR="${BUILDDIR}/tmp/work/intel_corei7_64-u2up-linux/u2up-pc-installer-image-full-cmdline/1.0-r0"
 rootfs_u2up_images_prepare
 build_image_wic
 
