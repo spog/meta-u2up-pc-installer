@@ -17,12 +17,12 @@ This is a "u2up-yocto" addons project for building your own PC installer.
 Getting started:
 ---------------
 Grab the "u2up-yocto" Linux distro build project by:
-$ git clone https://github.com/spog/u2up-yocto.git
+$ git clone https://github.com/spog/u2up-yocto.git u2up-yocto_pc-installer
 Cloning into 'u2up-yocto'...
 ...
 
 Change dir to prepare your "pc-installer" addons project:
-$ cd u2up-yocto/u2up
+$ cd u2up-yocto_pc-installer/u2up
 
 Grab the "meta-u2up-pc-installer" addons project by:
 $ git clone https://github.com/spog/meta-u2up-pc-installer.git
