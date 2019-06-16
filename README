@@ -17,7 +17,7 @@ This is a "u2up-yocto" addons project for building your own PC installer.
 Getting started:
 ---------------
 Grab the "u2up-yocto" Linux distro build project by:
-$ git clone https://github.com/spog/u2up-yocto.git u2up-yocto_pc-installer
+$ git clone -b thud https://github.com/spog/u2up-yocto.git u2up-yocto_pc-installer
 Cloning into 'u2up-yocto'...
 ...
 
