@@ -13,9 +13,9 @@ SRC_URI = " \
 "
 
 do_patch () {
-	mv ${WORKDIR}/LICENSE ${S}/
-	mv ${WORKDIR}/u2up-install-bash-lib ${S}/
-	mv ${WORKDIR}/u2up-pc-installer.sh ${S}/
+	cp -pf ${WORKDIR}/LICENSE ${S}/
+	cp -pf ${WORKDIR}/u2up-install-bash-lib ${S}/
+	cp -pf ${WORKDIR}/u2up-pc-installer.sh ${S}/
 }
 
 do_install () {
