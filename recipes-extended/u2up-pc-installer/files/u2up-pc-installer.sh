@@ -243,12 +243,6 @@ check_target_disk_set() {
 }
 
 check_net_internal_ifname_set() {
-	local NET_INTERNAL_IFNAME=""
-	local NET_INTERNAL_ADDR_MASK=""
-	local NET_INTERNAL_GW=""
-	local NET_DNS=""
-	local NET_DOMAINS=""
-
 	if [ -f "${U2UP_NETWORK_CONF_FILE}" ]; then
 		source $U2UP_NETWORK_CONF_FILE
 	else
@@ -257,6 +251,14 @@ check_net_internal_ifname_set() {
 	if [ -z "$NET_INTERNAL_IFNAME_SET" ]; then
 		display_result "Network internal interface check" "Please select your network internal interface!"
 		return 1
+	fi
+}
+
+check_install_repo_config_set() {
+	if [ -f "${U2UP_INSTALL_REPO_CONF_FILE}" ]; then
+		source $U2UP_INSTALL_REPO_CONF_FILE
+	else
+		INSTALL_REPO_BASE_URL_SET=""
 	fi
 }
 
@@ -954,6 +956,57 @@ EOF
 	return $rv
 }
 
+display_install_repo_config_submenu() {
+	local current_set=""
+	local current_item=""
+	local install_repo_base_url_current=${1:-"http://192.168.1.113:5678"}
+	local rv=1
+
+	check_install_repo_config_set
+	rv=$?
+	if [ $rv -ne 0 ]; then
+		return $rv
+	fi
+
+	while true; do
+		exec 3>&1
+		selection=$(IFS='|'; \
+		dialog \
+			--backtitle "${U2UP_BACKTITLE}" \
+			--title "Installation packages repo" \
+			--clear \
+			--default-item "$current_item" \
+			--cancel-label "Cancel" \
+			--extra-label "Change" \
+			--cr-wrap \
+			--inputmenu "\nPlease set:" $HEIGHT 0 12 \
+			"Base URL:" ${install_repo_base_url_current} \
+		2>&1 1>&3)
+		exit_status=$?
+		exec 3>&-
+
+		case $exit_status in
+		$DIALOG_CANCEL|$DIALOG_ESC)
+			clear
+			echo "Return from submenu."
+			return 1
+			;;
+		esac
+
+		current_item="$(get_item_selection $selection)"
+		current_set="$(store_install_repo_selection $selection)"
+		if [ -n "$current_set" ]; then
+			#Resize pressed: set new dialog values
+			eval $current_set
+		else
+			#Ok
+			store_install_repo_selection "Base URL: ${install_repo_base_url_current}"
+			(( rv+=$? ))
+			return $rv
+		fi
+	done
+}
+
 check_create_filesystems() {
 	local TARGET_DISK_SET=""
 	local TARGET_PART_SET=""
@@ -1252,6 +1305,7 @@ main_loop () {
 	local NET_INTERNAL_GW=""
 	local NET_DNS=""
 	local NET_DOMAINS=""
+	local INSTALL_REPO_BASE_URL=""
 
 	while true; do
 		if [ -f "${U2UP_KEYMAP_CONF_FILE}" ]; then
@@ -1281,6 +1335,9 @@ main_loop () {
 		if [ -n "${NET_INTERNAL_IFNAME_SET}" ]; then
 			net_internal_mac="$(ip link show dev $NET_INTERNAL_IFNAME_SET | grep "link\/ether" | sed 's/ *link\/ether *//' | sed 's/ .*//')"
 		fi
+		if [ -f "${U2UP_INSTALL_REPO_CONF_FILE}" ]; then
+			source $U2UP_INSTALL_REPO_CONF_FILE
+		fi
 
 		exec 3>&1
 		selection=$(dialog \
@@ -1289,7 +1346,7 @@ main_loop () {
 			--clear \
 			--cancel-label "Exit" \
 			--default-item $current_tag \
-			--menu "Please select:" $HEIGHT $WIDTH 9 \
+			--menu "Please select:" $HEIGHT $WIDTH 10 \
 			"1" "Keyboard mapping [${KEYMAP_SET}]" \
 			"2" "Target disk [${TARGET_DISK_SET}]" \
 			"3" "Disk partitions \
@@ -1301,8 +1358,9 @@ main_loop () {
 			"5" "Administrator [${TARGET_ADMIN_NAME_SET}]" \
 			"6" "Network internal interface [${NET_INTERNAL_IFNAME_SET} - ${net_internal_mac}]" \
 			"7" "Static network configuration [${NET_INTERNAL_ADDR_MASK_SET}]" \
-			"8" "Installation partition [${TARGET_PART_SET} - ${root_part_label}]" \
-			"9" "Install" \
+			"8" "Installation packages repo [${INSTALL_REPO_BASE_URL_SET}]" \
+			"9" "Installation partition [${TARGET_PART_SET} - ${root_part_label}]" \
+			"10" "Install" \
 		2>&1 1>&3)
 		exit_status=$?
 		exec 3>&-
@@ -1397,11 +1455,23 @@ main_loop () {
 			fi
 			;;
 		8)
+			local install_repo_base_url_old=$INSTALL_REPO_BASE_URL_SET
+			display_install_repo_config_submenu \
+				$INSTALL_REPO_BASE_URL_SET
+			rv=$?
+			if [ $rv -ne 0 ]; then
+				# Restore old installation packages repo configuration
+				if [ -n "${install_repo_base_url_old}" ]; then
+					store_install_repo_selection "Base URL: ${install_repo_base_url_old}"
+				fi
+			fi
+			;;
+		9)
 			display_target_part_submenu \
 				$TARGET_DISK_SET \
 				$TARGET_PART_SET
 			;;
-		9)
+		10)
 			execute_target_install
 			;;
 		esac
