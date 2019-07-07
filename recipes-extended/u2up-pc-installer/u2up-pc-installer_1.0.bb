@@ -7,26 +7,28 @@ DEPENDS = "bash"
 PR = "r1"
 
 SRC_URI = " \
-           file://LICENSE \
-           file://u2up-install-bash-lib \
            file://u2up-pc-installer.sh \
+           file://override.conf \
+           file://noclear.conf \
+           file://LICENSE \
 "
 
 do_patch () {
 	cp -pf ${WORKDIR}/LICENSE ${S}/
-	cp -pf ${WORKDIR}/u2up-install-bash-lib ${S}/
+	cp -pf ${WORKDIR}/noclear.conf ${S}/
+	cp -pf ${WORKDIR}/override.conf ${S}/
 	cp -pf ${WORKDIR}/u2up-pc-installer.sh ${S}/
 }
 
 do_install () {
-	install -d ${D}/etc/u2up-conf.d
-	install -d ${D}/lib/u2up
-	install -m 0755 ${S}/u2up-install-bash-lib ${D}/lib/u2up/
-	install -d ${D}/usr/bin
-	install -m 0755 ${S}/u2up-pc-installer.sh ${D}/usr/bin/
+	install -d ${D}/etc/profile.d
+	install -m 0644 ${S}/u2up-pc-installer.sh ${D}/etc/profile.d/
+	install -d ${D}/etc/systemd/system/getty@tty1.service.d
+	install -m 0644 ${S}/noclear.conf ${D}/etc/systemd/system/getty@tty1.service.d/
+	install -m 0644 ${S}/override.conf ${D}/etc/systemd/system/getty@tty1.service.d/
 }
 
-FILES_${PN} += "etc lib usr"
+FILES_${PN} += "etc"
 
-RDEPENDS_${PN} = "bash"
+RDEPENDS_${PN} = "systemd bash tar"
 

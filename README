@@ -62,11 +62,8 @@ bbsh|user@host:build.intel-corei7-64_thud$ ls -la | grep wic
 Use "bmaptool" to bake your installation media like this:
 bbsh|user@host:build.intel-corei7-64_thud$ sudo bmaptool copy ./u2up-homegw-pc-installer.wic /dev/sdb
 
-Boot from your new boot media.
-
-Login as "root" without password.
-
-Run the "u2up-pc-installer.sh" script.
+Boot from your new boot media and you wait for your "u2up-pc-installer.sh" script
+to be automatically started on "tty1".
 
 Configure and install your "u2up-homegw" system.
 

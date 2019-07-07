@@ -92,6 +92,7 @@ function rootfs_u2up_images_prepare ()
 	fi
 	rm -rf ${ROOTFSDIR}/var/lib/u2up-images
 	install -d ${ROOTFSDIR}/var/lib/u2up-images
+	install -m 0644 ${HOMEGW_IMAGESDIR}/u2up-pc-installer.tgz ${ROOTFSDIR}/var/lib/u2up-images/
 	install -m 0644 ${HOMEGW_IMAGESDIR}/systemd-bootx64.efi ${ROOTFSDIR}/var/lib/u2up-images/bootx64.efi
 	install -m 0644 ${HOMEGW_IMAGESDIR}/bzImage-intel-corei7-64.bin ${ROOTFSDIR}/var/lib/u2up-images/
 	install -m 0644 ${HOMEGW_IMAGESDIR}/modules-intel-corei7-64.tgz ${ROOTFSDIR}/var/lib/u2up-images/
