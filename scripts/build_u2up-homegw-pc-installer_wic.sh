@@ -92,12 +92,13 @@ function rootfs_u2up_images_prepare ()
 	fi
 	rm -rf ${ROOTFSDIR}/var/lib/u2up-images
 	install -d ${ROOTFSDIR}/var/lib/u2up-images
+	echo " - adding: u2up-pc-installer.tgz"
 	install -m 0644 ${HOMEGW_IMAGESDIR}/u2up-pc-installer.tgz ${ROOTFSDIR}/var/lib/u2up-images/
-	install -m 0644 ${HOMEGW_IMAGESDIR}/systemd-bootx64.efi ${ROOTFSDIR}/var/lib/u2up-images/bootx64.efi
-	install -m 0644 ${HOMEGW_IMAGESDIR}/bzImage-intel-corei7-64.bin ${ROOTFSDIR}/var/lib/u2up-images/
-	install -m 0644 ${HOMEGW_IMAGESDIR}/modules-intel-corei7-64.tgz ${ROOTFSDIR}/var/lib/u2up-images/
-	install -m 0644 ${HOMEGW_IMAGESDIR}/microcode.cpio ${ROOTFSDIR}/var/lib/u2up-images/
-	install -m 0644 ${HOMEGW_IMAGESDIR}/u2up-homegw-image-full-cmdline-intel-corei7-64.tar.gz ${ROOTFSDIR}/var/lib/u2up-images/
+	echo " - adding: u2up-homegw-bundle.tar.sha256"
+	install -m 0644 ${HOMEGW_IMAGESDIR}/u2up-homegw-bundle.tar.sha256 ${ROOTFSDIR}/var/lib/u2up-images/
+	echo " - adding: u2up-homegw-bundle.tar"
+	install -m 0644 ${HOMEGW_IMAGESDIR}/u2up-homegw-bundle.tar ${ROOTFSDIR}/var/lib/u2up-images/
+	echo
 }
 
 function build_image_wic ()

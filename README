@@ -50,9 +50,9 @@ $ ./distro intel-corei7-64 bitbake u2up-pc-installer-image-full-cmdline
 
 Create target PC installer for "u2up-homegw":
 $ ./distro intel-corei7-64 bbsh
-bbsh|user@host:build.intel-corei7-64_thud$ fakeroot ../meta-u2up-pc-installer/scripts/build_u2up-homegw-pc-installer_wic.sh {path_to_u2up-homegw_images}
+bbsh|user@host:build.intel-corei7-64_thud$ fakeroot ../meta-u2up-pc-installer/scripts/build_u2up-homegw-pc-installer_wic.sh {u2up-homegw_images_path}
 
-i.e. {path_to_u2up-homegw_images}: ~/u2up-yocto_homegw/u2up/build.intel-corei7-64_thud/tmp/deploy/images/intel-corei7-64
+i.e. {u2up-homegw-bundle_images_path}: ~/u2up-yocto_homegw/u2up/build.intel-corei7-64_thud/tmp/deploy/images/intel-corei7-64
 
 Check final Wic image:
 bbsh|user@host:build.intel-corei7-64_thud$ ls -la | grep wic
